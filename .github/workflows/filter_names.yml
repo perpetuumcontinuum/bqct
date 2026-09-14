@@ -1,51 +1,77 @@
-name: Filter Names (parts)
+name: Filter Names
 
 on:
   workflow_dispatch:
+    inputs:
+      batch_size:
+        description: 'Words per LLM request'
+        required: false
+        default: '50'
+      resume_from:
+        description: 'Resume from index (0 = start)'
+        required: false
+        default: '0'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   filter:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        part: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]
-      fail-fast: false
+    timeout-minutes: 350   # ~5.8 hours (max 6h)
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
           cache: 'pip'
+
       - name: Free disk
         run: |
           sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost
           sudo apt-get clean
+          df -h
+
       - name: Cache Qwen model
         uses: actions/cache@v4
         with:
           path: models/Qwen3-14B-Q5_K_M.gguf
           key: qwen3-14b-q5km-v1
+
       - name: Install deps
         run: |
-          pip install --upgrade pip
+          pip install --upgrade pip setuptools wheel
           CMAKE_ARGS="-DGGML_BLAS=OFF -DGGML_CUDA=OFF" pip install --prefer-binary llama-cpp-python==0.3.20
+
       - name: Download Qwen
         run: |
+          set -e
           mkdir -p models
           FILE="models/Qwen3-14B-Q5_K_M.gguf"
-          if [ ! -f "$FILE" ] || [ "$(stat -c%s "$FILE" 2>/dev/null || echo 0)" -lt 100000000 ]; then
-            curl -L --retry 5 -o "$FILE" "https://huggingface.co/Qwen/Qwen3-14B-GGUF/resolve/main/Qwen3-14B-Q5_K_M.gguf?download=true"
+          MIN_SIZE=100000000
+          if [ ! -f "$FILE" ] || [ "$(stat -c%s "$FILE" 2>/dev/null || echo 0)" -lt "$MIN_SIZE" ]; then
+            echo "[INFO] Downloading Qwen3-14B (9.7 GB)..."
+            curl -L --retry 5 --retry-delay 15 -o "$FILE" "https://huggingface.co/Qwen/Qwen3-14B-GGUF/resolve/main/Qwen3-14B-Q5_K_M.gguf?download=true"
           fi
-      - name: Process part ${{ matrix.part }}
+          echo "[OK] Model ready"
+
+      - name: Filter names
         env:
-          PART: ${{ matrix.part }}
-          TOTAL_PARTS: 20
-        run: python process_part.py
-      - name: Upload result
-        uses: actions/upload-artifact@v4
-        with:
-          name: part-${{ matrix.part }}-result
-          path: part_${{ matrix.part }}_result.json
+          BATCH_SIZE: ${{ inputs.batch_size }}
+          RESUME_FROM: ${{ inputs.resume_from }}
+          PYTHONUNBUFFERED: "1"
+        run: python filter_all.py
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add core.json
+          git add progress.json || true
+          if git diff --quiet && git diff --staged --quiet; then
+            echo "No changes."
+          else
+            git commit -m "Filter names (auto, resume from ${{ inputs.resume_from }})"
+            git push
+          fi
