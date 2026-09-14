@@ -44,6 +44,12 @@ def classify_batch(batch):
         "For each word below, decide:\n"
         "- KEEP if it is a real common English word (noun, verb, adjective).\n"
         "- REMOVE if it is a name, brand, place, or a nonsense word.\n\n"
+        "Examples:\n"
+        "love KEEP\n"
+        "john REMOVE\n"
+        "rose KEEP\n"
+        "kardashian REMOVE\n"
+        "googoo REMOVE\n\n"
         "Answer one word per line: word KEEP or word REMOVE.\n\n"
         "Words: " + ", ".join(batch)
     )
