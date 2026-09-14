@@ -49,7 +49,7 @@ jobs:
           if [ ! -f "$FILE" ] || [ "$(stat -c%s "$FILE" 2>/dev/null || echo 0)" -lt "$MIN_SIZE" ]; then
             echo "[INFO] Downloading Qwen2.5-7B (~4.7 GB)..."
             curl -L --retry 5 --retry-delay 15 -o "$FILE" \
-              "https://huggingface.co/Qwen/Qwen2.5-7B-Instruct-GGUF/resolve/main/qwen2.5-7b-instruct-q4_k_m.gguf?download=true"
+              "https://huggingface.co/Qwen/Qwen3-14B-GGUF/resolve/main/Qwen3-14B-Q5_K_M.gguf?download=true"
           fi
           echo "[OK] Model ready: $(stat -c%s "$FILE") bytes"
 
