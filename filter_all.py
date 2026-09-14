@@ -11,7 +11,6 @@ PROGRESS_FILE = "progress.json"
 BATCH_SIZE = 200
 N_THREADS = os.cpu_count() or 4
 MAX_RUNTIME_SEC = int(os.environ.get("MAX_RUNTIME_SEC", "19000"))
-
 START_TIME = time.time()
 
 print(f"Threads: {N_THREADS}")
@@ -38,27 +37,44 @@ llm = Llama(
     verbose=False,
 )
 
-SYSTEM = """You are a linguistic classifier for a minimal constructed language.
+SYSTEM = "You classify English words. Answer briefly and exactly."
 
-For each English word, decide:
-- KEEP if it is a common noun, verb, adjective, or adverb (ordinary word).
-- REMOVE if it is a proper name, family name, brand, place name, or an obvious typo.
+def classify_batch(batch):
+    prompt = (
+        "For each word below, decide:\n"
+        "- KEEP if it is a real common English word (noun, verb, adjective).\n"
+        "- REMOVE if it is a name, brand, place, or a nonsense word.\n\n"
+        "Answer one word per line: word KEEP or word REMOVE.\n\n"
+        "Words: " + ", ".join(batch)
+    )
+    try:
+        result = llm.create_chat_completion(
+            messages=[
+                {"role": "system", "content": SYSTEM},
+                {"role": "user", "content": prompt},
+            ],
+            max_tokens=4096,
+            temperature=0.0,
+        )
+        text = result["choices"][0]["message"]["content"]
+        return text
+    except Exception as e:
+        print(f"  [ERROR] {e}")
+        return ""
 
-Examples:
-- KEEP: love, rose, king, sun, may, will, peace, faith, grace, joy, price, power
-- REMOVE: john, mary, smith, kardashian, obama, whatsapp, instagram, minecraft, consious
-
-If uncertain, KEEP.
-
-Respond ONLY with valid JSON, no explanation:
-{"keep": ["word1", "word2"], "remove": ["word3", "word4"]}"""
-
-print("Warming up (caching system prompt)...")
-llm.create_chat_completion(
-    messages=[{"role": "system", "content": SYSTEM}],
-    max_tokens=1,
-    temperature=0.0,
-)
+def parse_response(text):
+    """Parse lines like 'word KEEP' or 'word REMOVE'."""
+    remove = []
+    for line in text.splitlines():
+        line = line.strip().lower()
+        if not line:
+            continue
+        m = re.match(r'^([a-z]+)[\s:\-\.]+(keep|remove)', line)
+        if m:
+            word, verdict = m.group(1), m.group(2)
+            if verdict == "remove":
+                remove.append(word)
+    return remove
 
 with open(CORE_FILE, "r", encoding="utf-8") as f:
     core = json.load(f)
@@ -67,39 +83,20 @@ words = [w for w in core.keys() if not w.startswith("__")]
 total = len(words)
 print(f"Words to classify: {total}")
 
-def classify_batch(batch):
-    prompt = "Words: " + ", ".join(batch)
-    try:
-        result = llm.create_chat_completion(
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=4096,
-            temperature=0.0,
-        )
-        text = result["choices"][0]["message"]["content"]
-        m = re.search(r'\{.*\}', text, re.DOTALL)
-        if not m:
-            return [], []
-        data = json.loads(m.group(0))
-        return data.get("keep", []), data.get("remove", [])
-    except Exception as e:
-        print(f"  [ERROR] {e}")
-        return [], []
-
 i = RESUME_FROM
 while i < total:
-    # Check runtime
     elapsed = time.time() - START_TIME
     if elapsed > MAX_RUNTIME_SEC:
-        print(f"\n[TIME] Reached max runtime ({elapsed:.0f}s). Saving progress and exiting.")
+        print(f"\n[TIME] Reached max runtime ({elapsed:.0f}s). Saving progress.")
         break
 
     batch = words[i:i+BATCH_SIZE]
-    keep, remove = classify_batch(batch)
-    to_remove.update([w.lower() for w in remove])
+    response = classify_batch(batch)
+    removed = parse_response(response)
+    to_remove.update([w.lower() for w in removed])
     i += len(batch)
     print(f"[{i}/{total}] removed so far: {len(to_remove)} | elapsed: {elapsed:.0f}s")
 
-    # Save progress every 10 batches
     if (i // BATCH_SIZE) % 10 == 0:
         with open(PROGRESS_FILE, "w") as f:
             json.dump({
@@ -108,7 +105,7 @@ while i < total:
             }, f)
         print(f"  [progress saved: {i}/{total}]")
 
-# Always save final progress
+# Save final progress
 with open(PROGRESS_FILE, "w") as f:
     json.dump({
         "to_remove": sorted(to_remove),
@@ -118,7 +115,6 @@ with open(PROGRESS_FILE, "w") as f:
 print(f"\nProcessed: {i}/{total}")
 print(f"To remove: {len(to_remove)}")
 
-# Only clean core.json if we processed ALL words
 if i >= total:
     print("All words processed. Cleaning core.json...")
     cleaned = {}
@@ -144,4 +140,3 @@ if i >= total:
     print("Done.")
 else:
     print(f"Partial run. {total - i} words remaining.")
-    print("Progress saved. Next run will resume automatically.")
