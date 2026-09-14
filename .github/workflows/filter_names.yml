@@ -40,14 +40,20 @@ jobs:
           pip install --upgrade pip
           pip install llama-cpp-python --extra-index-url https://parisneo.github.io/llama-cpp-python-wheels/whl/cpu/
 
-      - name: Download Qwen 7B
+      - name: Cache Qwen 3B
+        uses: actions/cache@v4
+        with:
+          path: models/qwen2.5-3b-instruct-q5_k_m.gguf
+          key: qwen25-3b-q5km-v1
+
+      - name: Download Qwen 3B
         run: |
           set -e
           mkdir -p models
-          FILE="models/qwen2.5-7b-instruct-q4_k_m.gguf"
-          MIN_SIZE=3000000000
+          FILE="models/qwen2.5-3b-instruct-q5_k_m.gguf"
+          MIN_SIZE=1000000000
           if [ ! -f "$FILE" ] || [ "$(stat -c%s "$FILE" 2>/dev/null || echo 0)" -lt "$MIN_SIZE" ]; then
-            echo "[INFO] Downloading Qwen2.5-7B (~4.7 GB)..."
+            echo "[INFO] Downloading Qwen2.5-3B..."
             curl -L --retry 5 --retry-delay 15 -o "$FILE" \
               "https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q5_k_m.gguf?download=true"
           fi
