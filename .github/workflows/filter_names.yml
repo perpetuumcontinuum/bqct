@@ -9,7 +9,7 @@ permissions:
 jobs:
   filter:
     runs-on: ubuntu-latest
-    timeout-minutes: 340   # ~5.6h, под 6-часовой лимит
+    timeout-minutes: 340
     steps:
       - uses: actions/checkout@v4
 
@@ -23,40 +23,38 @@ jobs:
           sudo apt-get clean
           df -h
 
-      - name: Restore progress from previous run
+      - name: Restore progress
         uses: actions/download-artifact@v4
         with:
           name: progress
         continue-on-error: true
 
-      - name: Cache Qwen 3B model
+      - name: Cache Qwen 3B
         uses: actions/cache@v4
         with:
           path: models/qwen2.5-3b-instruct-q5_k_m.gguf
           key: qwen25-3b-q5km-v1
 
-      - name: Install llama-cpp-python (optimized)
+      - name: Install deps
         run: |
           pip install --upgrade pip
           pip install llama-cpp-python --extra-index-url https://parisneo.github.io/llama-cpp-python-wheels/whl/cpu/
 
-      - name: Download Qwen2.5-3B
+      - name: Download Qwen
         run: |
           set -e
           mkdir -p models
           FILE="models/qwen2.5-3b-instruct-q5_k_m.gguf"
           MIN_SIZE=1000000000
           if [ ! -f "$FILE" ] || [ "$(stat -c%s "$FILE" 2>/dev/null || echo 0)" -lt "$MIN_SIZE" ]; then
-            echo "[INFO] Downloading Qwen2.5-3B..."
             curl -L --retry 5 --retry-delay 15 -o "$FILE" \
               "https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q5_k_m.gguf?download=true"
           fi
-          echo "[OK] Model ready: $(stat -c%s "$FILE") bytes"
 
-      - name: Filter names
+      - name: Run filter
         env:
           PYTHONUNBUFFERED: "1"
-          MAX_RUNTIME_SEC: "19000"   # ~5.3h, чтобы успеть сохранить
+          MAX_RUNTIME_SEC: "19000"
         run: python filter_all.py
 
       - name: Save progress
@@ -68,7 +66,7 @@ jobs:
           retention-days: 90
           if-no-files-found: warn
 
-      - name: Save partial core.json
+      - name: Save partial core
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -77,13 +75,12 @@ jobs:
           retention-days: 90
           if-no-files-found: warn
 
-      - name: Commit and push
+      - name: Commit
         if: success()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add core.json
-          git add progress.json 2>/dev/null || true
+          git add core.json progress.json 2>/dev/null || true
           if git diff --quiet && git diff --staged --quiet; then
             echo "No changes."
           else
