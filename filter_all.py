@@ -106,6 +106,8 @@ while i < total:
     batch = words[i:i+BATCH_SIZE]
     response = classify_batch(batch)
     removed = parse_response(response)
+    if removed:
+        print(f"  Removed: {removed}")
     to_remove.update([w.lower() for w in removed])
     i += len(batch)
     print(f"[{i}/{total}] removed so far: {len(to_remove)} | elapsed: {elapsed:.0f}s")
