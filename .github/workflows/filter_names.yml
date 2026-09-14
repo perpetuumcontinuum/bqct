@@ -2,11 +2,6 @@ name: Filter Names
 
 on:
   workflow_dispatch:
-    inputs:
-      resume_from:
-        description: 'Resume from index (0 = start)'
-        required: false
-        default: '0'
 
 permissions:
   contents: write
@@ -14,7 +9,7 @@ permissions:
 jobs:
   filter:
     runs-on: ubuntu-latest
-    timeout-minutes: 350
+    timeout-minutes: 340   # ~5.6h, под 6-часовой лимит
     steps:
       - uses: actions/checkout@v4
 
@@ -27,6 +22,12 @@ jobs:
           sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost
           sudo apt-get clean
           df -h
+
+      - name: Restore progress from previous run
+        uses: actions/download-artifact@v4
+        with:
+          name: progress
+        continue-on-error: true
 
       - name: Cache Qwen 3B model
         uses: actions/cache@v4
@@ -54,11 +55,30 @@ jobs:
 
       - name: Filter names
         env:
-          RESUME_FROM: ${{ inputs.resume_from }}
           PYTHONUNBUFFERED: "1"
+          MAX_RUNTIME_SEC: "19000"   # ~5.3h, чтобы успеть сохранить
         run: python filter_all.py
 
+      - name: Save progress
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: progress
+          path: progress.json
+          retention-days: 90
+          if-no-files-found: warn
+
+      - name: Save partial core.json
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-partial
+          path: core.json
+          retention-days: 90
+          if-no-files-found: warn
+
       - name: Commit and push
+        if: success()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -67,6 +87,6 @@ jobs:
           if git diff --quiet && git diff --staged --quiet; then
             echo "No changes."
           else
-            git commit -m "Filter names (resume from ${{ inputs.resume_from }})"
+            git commit -m "Filter names (auto)"
             git push
           fi
