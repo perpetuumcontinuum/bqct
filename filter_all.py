@@ -4,7 +4,7 @@ import re
 import time
 from llama_cpp import Llama
 
-MODEL_PATH = "models/qwen2.5-3b-instruct-q5_k_m.gguf"
+MODEL_PATH = "models/qwen2.5-7b-instruct-q4_k_m.gguf"
 CORE_FILE = "core.json"
 PROGRESS_FILE = "progress.json"
 
@@ -41,22 +41,21 @@ SYSTEM = "You classify English words. Answer briefly and exactly."
 
 def classify_batch(batch):
     prompt = (
-        "For each word below, decide:\n"
-        "- KEEP if it is a real common English word (noun, verb, adjective).\n"
-        "- REMOVE if it is a name, brand, place, or a nonsense word.\n\n"
-        "Important: some words are both names AND common words. "
-        "If a word has any common meaning, KEEP it.\n"
-        "For example, 'smith' is a surname AND a profession (blacksmith) — KEEP it.\n"
-        "'rose' is a name AND a flower — KEEP it.\n\n"
-        "Examples:\n"
-        "love KEEP\n"
-        "john REMOVE\n"
-        "rose KEEP (flower)\n"
-        "smith KEEP (profession)\n"
-        "kardashian REMOVE\n"
-        "googoo REMOVE\n"
-        "kdog REMOVE\n"
-        "whatsapp REMOVE\n\n"
+        "Classify each word below as KEEP or REMOVE.\n\n"
+        "KEEP if it is:\n"
+        "- a common noun (sex, hotel, breast, terms)\n"
+        "- a verb (before, share)\n"
+        "- an adjective (similar)\n"
+        "- a toponym: country, city, region (texas, china, ca)\n"
+        "- an abbreviation (dvd, id)\n\n"
+        "REMOVE if it is:\n"
+        "- a person's name (john, mary, kardashian)\n"
+        "- a brand (ebay, whatsapp, instagram)\n"
+        "- a nonsense word (googoo, kdog, hamumu)\n\n"
+        "Important: if a word is BOTH a name AND a common word, KEEP it.\n"
+        "- smith KEEP (profession)\n"
+        "- rose KEEP (flower)\n"
+        "- may KEEP (month, verb)\n\n"
         "Answer one word per line: word KEEP or word REMOVE.\n\n"
         "Words: " + ", ".join(batch)
     )
@@ -133,12 +132,14 @@ print(f"To remove: {len(to_remove)}")
 if i >= total:
     print("All words processed. Cleaning core.json...")
     cleaned = {}
+    removed_dict = {}
     removed_count = 0
     for word, code in core.items():
         if word.startswith("__"):
             cleaned[word] = code
             continue
         if word.lower() in to_remove:
+            removed_dict[word] = code
             removed_count += 1
             continue
         cleaned[word] = code
@@ -146,12 +147,18 @@ if i >= total:
     print(f"Removed {removed_count} words")
     print(f"Core: {len(core)} -> {len(cleaned)}")
 
+    # Save cleaned core
     with open(CORE_FILE, "w", encoding="utf-8") as f:
         json.dump(cleaned, f, ensure_ascii=False, indent=2)
+    print(f"Saved cleaned core to {CORE_FILE}")
+
+    # Save removed words
+    REMOVED_FILE = "removed.json"
+    with open(REMOVED_FILE, "w", encoding="utf-8") as f:
+        json.dump(removed_dict, f, ensure_ascii=False, indent=2)
+    print(f"Saved removed words to {REMOVED_FILE}")
 
     if os.path.exists(PROGRESS_FILE):
         os.remove(PROGRESS_FILE)
 
     print("Done.")
-else:
-    print(f"Partial run. {total - i} words remaining.")
