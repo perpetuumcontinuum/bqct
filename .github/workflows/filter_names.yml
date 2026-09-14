@@ -3,10 +3,6 @@ name: Filter Names
 on:
   workflow_dispatch:
     inputs:
-      batch_size:
-        description: 'Words per LLM request'
-        required: false
-        default: '50'
       resume_from:
         description: 'Resume from index (0 = start)'
         required: false
@@ -18,14 +14,13 @@ permissions:
 jobs:
   filter:
     runs-on: ubuntu-latest
-    timeout-minutes: 350   # ~5.8 hours (max 6h)
+    timeout-minutes: 350
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
-          cache: 'pip'
+          python-version: '3.11'
 
       - name: Free disk
         run: |
@@ -33,32 +28,32 @@ jobs:
           sudo apt-get clean
           df -h
 
-      - name: Cache Qwen model
+      - name: Cache Qwen 3B model
         uses: actions/cache@v4
         with:
-          path: models/Qwen3-14B-Q5_K_M.gguf
-          key: qwen3-14b-q5km-v1
+          path: models/qwen2.5-3b-instruct-q5_k_m.gguf
+          key: qwen25-3b-q5km-v1
 
-      - name: Install deps
+      - name: Install llama-cpp-python (optimized)
         run: |
-          pip install --upgrade pip setuptools wheel
-          CMAKE_ARGS="-DGGML_BLAS=OFF -DGGML_CUDA=OFF" pip install --prefer-binary llama-cpp-python==0.3.20
+          pip install --upgrade pip
+          pip install llama-cpp-python --extra-index-url https://parisneo.github.io/llama-cpp-python-wheels/whl/cpu/
 
-      - name: Download Qwen
+      - name: Download Qwen2.5-3B
         run: |
           set -e
           mkdir -p models
-          FILE="models/Qwen3-14B-Q5_K_M.gguf"
-          MIN_SIZE=100000000
+          FILE="models/qwen2.5-3b-instruct-q5_k_m.gguf"
+          MIN_SIZE=1000000000
           if [ ! -f "$FILE" ] || [ "$(stat -c%s "$FILE" 2>/dev/null || echo 0)" -lt "$MIN_SIZE" ]; then
-            echo "[INFO] Downloading Qwen3-14B (9.7 GB)..."
-            curl -L --retry 5 --retry-delay 15 -o "$FILE" "https://huggingface.co/Qwen/Qwen3-14B-GGUF/resolve/main/Qwen3-14B-Q5_K_M.gguf?download=true"
+            echo "[INFO] Downloading Qwen2.5-3B..."
+            curl -L --retry 5 --retry-delay 15 -o "$FILE" \
+              "https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q5_k_m.gguf?download=true"
           fi
-          echo "[OK] Model ready"
+          echo "[OK] Model ready: $(stat -c%s "$FILE") bytes"
 
       - name: Filter names
         env:
-          BATCH_SIZE: ${{ inputs.batch_size }}
           RESUME_FROM: ${{ inputs.resume_from }}
           PYTHONUNBUFFERED: "1"
         run: python filter_all.py
@@ -68,10 +63,10 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add core.json
-          git add progress.json || true
+          git add progress.json 2>/dev/null || true
           if git diff --quiet && git diff --staged --quiet; then
             echo "No changes."
           else
-            git commit -m "Filter names (auto, resume from ${{ inputs.resume_from }})"
+            git commit -m "Filter names (resume from ${{ inputs.resume_from }})"
             git push
           fi
